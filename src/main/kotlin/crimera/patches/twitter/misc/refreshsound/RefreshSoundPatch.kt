@@ -1,9 +1,7 @@
 package crimera.patches.twitter.misc.refreshsound
 
 import app.revanced.patcher.data.BytecodeContext
-import app.revanced.patcher.extensions.InstructionExtensions.addInstruction
 import app.revanced.patcher.extensions.InstructionExtensions.addInstructions
-import app.revanced.patcher.extensions.InstructionExtensions.getInstructions
 import app.revanced.patcher.fingerprint.MethodFingerprint
 import app.revanced.patcher.fingerprint.MethodFingerprintResult
 import app.revanced.patcher.patch.BytecodePatch
@@ -35,6 +33,7 @@ object RefreshSoundPatch : BytecodePatch(
 
         val complete = RefreshCompleteFingerprint.result
             ?: throw PatchException("RefreshCompleteFingerprint not found")
+
         val m = complete.mutableMethod
         var lastRet = -1
         for (ins in m.implementation!!.instructions) {
@@ -53,49 +52,59 @@ object RefreshSoundPatch : BytecodePatch(
 
 private fun MethodFingerprintResult.injectPullHook() {
     val method = this.mutableMethod
-    method.addInstruction(
+    // onPull(F) — 첫 번째 인자(float)를 그대로 전달 (일반적으로 p1)
+    method.addInstructions(
         0,
         "invoke-static {p1}, Lapp/revanced/integrations/twitter/hooks/RefreshHooks;->onPull(F)V"
     )
 }
 
+/** Accompanist: com.google.accompanist.swiperefresh.SwipeRefreshNestedScrollConnection#onPull(F)F */
 object PullAccompanistFingerprint : MethodFingerprint(
     returnType = "F",
     parameters = listOf("F"),
     customFingerprint = { m, c ->
         try {
-            if (m.name != "onPull") return@customFingerprint false
-            if (m.parameterTypes.size != 1 || m.parameterTypes[0] != "F") return@customFingerprint false
-            if (m.returnType != "F") return@customFingerprint false
             val cls: ClassDef? = c
-            cls != null && cls.type.startsWith("Lcom/google/accompanist/swiperefresh/SwipeRefreshNestedScrollConnection")
-        } catch (_: Throwable) { false }
+            (m.name == "onPull") &&
+            (m.parameterTypes.size == 1 && m.parameterTypes[0] == "F") &&
+            (m.returnType == "F") &&
+            (cls != null && cls.type.startsWith("Lcom/google/accompanist/swiperefresh/SwipeRefreshNestedScrollConnection"))
+        } catch (_: Throwable) {
+            false
+        }
     }
 )
 
+/** Material3 PullToRefresh: androidx.compose.material3.pulltorefresh.* 의 onPull(F)F */
 object PullMaterial3Fingerprint : MethodFingerprint(
     returnType = "F",
     parameters = listOf("F"),
     customFingerprint = { m, c ->
         try {
-            if (m.name != "onPull") return@customFingerprint false
-            if (m.parameterTypes.size != 1 || m.parameterTypes[0] != "F") return@customFingerprint false
-            if (m.returnType != "F") return@customFingerprint false
             val cls: ClassDef? = c
-            cls != null && cls.type.contains("Landroidx/compose/material3/pulltorefresh/")
-        } catch (_: Throwable) { false }
+            (m.name == "onPull") &&
+            (m.parameterTypes.size == 1 && m.parameterTypes[0] == "F") &&
+            (m.returnType == "F") &&
+            (cls != null && cls.type.contains("Landroidx/compose/material3/pulltorefresh/"))
+        } catch (_: Throwable) {
+            false
+        }
     }
 )
+
 object RefreshCompleteFingerprint : MethodFingerprint(
     returnType = "V",
     customFingerprint = { m, c ->
         try {
             val cls: ClassDef? = c
-            if (cls == null || !cls.type.startsWith("Lcom/twitter/")) return@customFingerprint false
+            (cls != null && cls.type.startsWith("Lcom/twitter/")) &&
             when (m.name) {
                 "notifyDataSetChanged", "notifyItemRangeInserted", "notifyItemRangeChanged" -> true
                 else -> false
             }
-        } catch (_: Throwable) { false }
+        } catch (_: Throwable) {
+            false
+        }
     }
 )
